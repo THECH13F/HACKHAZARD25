@@ -1,0 +1,674 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - RT-CTA{% endblock %}
+
+{% block styles %}
+.threat-card {
+    border-left: 4px solid #ccc;
+    margin-bottom: 10px;
+    transition: all 0.3s;
+}
+.threat-LOW { border-left-color: #28a745; }
+.threat-MEDIUM { border-left-color: #ffc107; }
+.threat-HIGH { border-left-color: #fd7e14; }
+.threat-CRITICAL { border-left-color: #dc3545; }
+
+.threat-badge-LOW { background-color: #28a745; }
+.threat-badge-MEDIUM { background-color: #ffc107; color: #212529; }
+.threat-badge-HIGH { background-color: #fd7e14; }
+.threat-badge-CRITICAL { background-color: #dc3545; }
+
+.source-badge-visual { background-color: #6f42c1; }
+.source-badge-audio { background-color: #0dcaf0; }
+.source-badge-text { background-color: #6c757d; }
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    max-width: 350px;
+    z-index: 1000;
+    animation: slide-in 0.5s ease;
+}
+
+@keyframes slide-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+#threat-timeline {
+    height: 200px;
+}
+
+.live-feed {
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}
+
+.feed-header {
+    background-color: rgba(0,0,0,0.1);
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 3px 10px;
+    display: flex;
+    justify-content: space-between;
+    z-index: 10;
+}
+
+.feed-label {
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.feed-status {
+    font-size: 12px;
+}
+
+.feed-status.active {
+    color: #28a745;
+}
+
+.feed-status.inactive {
+    color: #dc3545;
+}
+
+.live-screen {
+    width: 100%;
+    height: 200px;
+    background-color: #f8f9fa;
+    object-fit: cover;
+}
+
+.audio-visualizer {
+    width: 100%;
+    height: 80px;
+    background-color: #f8f9fa;
+}
+
+.text-feed {
+    width: 100%;
+    height: 80px;
+    background-color: #f8f9fa;
+    padding: 5px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.threat-overlay {
+    position: absolute;
+    border: 2px solid #dc3545;
+    background-color: rgba(220, 53, 69, 0.3);
+    z-index: 5;
+}
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="start-monitoring">Start Monitoring</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="stop-monitoring">Stop</button>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Live Feeds -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Live Monitoring</h5>
+                <span id="connection-status">
+                    <span class="badge bg-secondary">Connecting...</span>
+                </span>
+            </div>
+            <div class="card-body">
+                <!-- Visual Feed -->
+                <div class="live-feed mb-3">
+                    <div class="feed-header">
+                        <span class="feed-label"><i class="bi bi-camera-video"></i> Screen Capture</span>
+                        <span class="feed-status active" id="visual-feed-status">Active</span>
+                    </div>
+                    <img id="live-screen" class="live-screen" src="/static/img/placeholder-screen.jpg" alt="Screen capture">
+                    <!-- Threat detection overlay - will be positioned dynamically -->
+                    <div class="threat-overlay" id="visual-threat-overlay" style="display:none;"></div>
+                </div>
+                
+                <!-- Audio Feed -->
+                <div class="live-feed mb-3">
+                    <div class="feed-header">
+                        <span class="feed-label"><i class="bi bi-mic"></i> Audio Analysis</span>
+                        <span class="feed-status active" id="audio-feed-status">Active</span>
+                    </div>
+                    <canvas id="audio-visualizer" class="audio-visualizer"></canvas>
+                </div>
+                
+                <!-- Text Feed -->
+                <div class="live-feed">
+                    <div class="feed-header">
+                        <span class="feed-label"><i class="bi bi-chat-text"></i> Text Monitoring</span>
+                        <span class="feed-status active" id="text-feed-status">Active</span>
+                    </div>
+                    <div id="text-feed" class="text-feed">
+                        <div class="mb-1">> System initialized and monitoring text inputs</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Status Overview and Recent Threats -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Monitoring Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="display-4 mb-1"><i class="bi bi-camera-video"></i></div>
+                        <div class="text-muted">Visual</div>
+                        <div class="badge bg-success" id="visual-status">Active</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="display-4 mb-1"><i class="bi bi-mic"></i></div>
+                        <div class="text-muted">Audio</div>
+                        <div class="badge bg-success" id="audio-status">Active</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="display-4 mb-1"><i class="bi bi-chat-text"></i></div>
+                        <div class="text-muted">Text</div>
+                        <div class="badge bg-success" id="text-status">Active</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Threat Timeline -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Threat Timeline</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="threat-timeline"></canvas>
+            </div>
+        </div>
+        
+        <!-- Recent Threats -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Recent Threats</h5>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary active" data-filter="all">All</button>
+                    <button class="btn btn-outline-secondary" data-filter="visual">Visual</button>
+                    <button class="btn btn-outline-secondary" data-filter="audio">Audio</button>
+                    <button class="btn btn-outline-secondary" data-filter="text">Text</button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush" id="recent-threats">
+                    <!-- Threats will be loaded dynamically -->
+                    <div class="list-group-item d-flex gap-3 py-3 threat-card threat-MEDIUM">
+                        <div class="d-flex gap-2 w-100 justify-content-between">
+                            <div>
+                                <h6 class="mb-0">Suspicious URL detected</h6>
+                                <p class="mb-0 opacity-75">Email contained a link to a potentially malicious website</p>
+                                <div class="d-flex mt-1 align-items-center">
+                                    <span class="badge threat-badge-MEDIUM me-2">Medium</span>
+                                    <span class="badge source-badge-text me-2">Text</span>
+                                    <small class="opacity-50">Confidence: 87%</small>
+                                </div>
+                            </div>
+                            <small class="opacity-50 text-nowrap">3 min ago</small>
+                        </div>
+                    </div>
+                    <div class="list-group-item d-flex gap-3 py-3 threat-card threat-HIGH">
+                        <div class="d-flex gap-2 w-100 justify-content-between">
+                            <div>
+                                <h6 class="mb-0">Credential theft attempt</h6>
+                                <p class="mb-0 opacity-75">Detected request for sensitive information in audio</p>
+                                <div class="d-flex mt-1 align-items-center">
+                                    <span class="badge threat-badge-HIGH me-2">High</span>
+                                    <span class="badge source-badge-audio me-2">Audio</span>
+                                    <small class="opacity-50">Confidence: 92%</small>
+                                </div>
+                            </div>
+                            <small class="opacity-50 text-nowrap">12 min ago</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // WebSocket connection
+    const userId = {{ user.id }};
+    const socket = new WebSocket(`ws://${window.location.host}/ws/notifications/`);
+    
+    socket.onopen = function(e) {
+        console.log('WebSocket connection established');
+        document.getElementById('connection-status').innerHTML = '<span class="badge bg-success">Connected</span>';
+    };
+    
+    socket.onclose = function(e) {
+        console.log('WebSocket connection closed');
+        document.getElementById('connection-status').innerHTML = '<span class="badge bg-danger">Disconnected</span>';
+    };
+    
+    socket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        console.log('Message received:', data);
+        
+        if (data.type === 'threat_notification') {
+            handleThreatNotification(data.data);
+        } else if (data.type === 'analysis_update') {
+            handleAnalysisUpdate(data.data);
+        } else if (data.type === 'visual_update') {
+            updateVisualFeed(data.data);
+        } else if (data.type === 'audio_update') {
+            updateAudioFeed(data.data);
+        } else if (data.type === 'text_update') {
+            updateTextFeed(data.data);
+        } else if (data.type === 'pong') {
+            // Handle pong response
+        }
+    };
+    
+    // Keep connection alive with ping
+    setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                type: 'ping',
+                timestamp: new Date().toISOString()
+            }));
+        }
+    }, 30000);
+    
+    // Handle threat notifications
+    function handleThreatNotification(threat) {
+        // Create notification
+        showNotification(threat);
+        
+        // Add to recent threats list
+        addThreatToList(threat);
+        
+        // Update charts/timeline
+        updateTimeline();
+        
+        // Handle specific threat types
+        if (threat.source_type === 'visual' && threat.bounding_box) {
+            showVisualThreatOverlay(threat.bounding_box);
+        } else if (threat.source_type === 'text') {
+            highlightTextThreat(threat);
+        } else if (threat.source_type === 'audio') {
+            highlightAudioThreat();
+        }
+    }
+    
+    // Handle analysis updates
+    function handleAnalysisUpdate(update) {
+        if (update.type === 'session_update') {
+            updateSessionStatus(update.status);
+        }
+    }
+    
+    // Update visual feed with new screenshot
+    function updateVisualFeed(data) {
+        const liveScreen = document.getElementById('live-screen');
+        if (data.image_url) {
+            liveScreen.src = data.image_url + '?t=' + new Date().getTime(); // Prevent caching
+        }
+        
+        // Reset any threat overlay
+        const overlay = document.getElementById('visual-threat-overlay');
+        overlay.style.display = 'none';
+    }
+    
+    // Show threat overlay on the visual feed
+    function showVisualThreatOverlay(boundingBox) {
+        const overlay = document.getElementById('visual-threat-overlay');
+        const liveScreen = document.getElementById('live-screen');
+        
+        // Calculate positions relative to the screen capture container
+        const containerWidth = liveScreen.offsetWidth;
+        const containerHeight = liveScreen.offsetHeight;
+        
+        const left = (boundingBox.x / 100) * containerWidth;
+        const top = (boundingBox.y / 100) * containerHeight;
+        const width = (boundingBox.width / 100) * containerWidth;
+        const height = (boundingBox.height / 100) * containerHeight;
+        
+        overlay.style.left = left + 'px';
+        overlay.style.top = top + 'px';
+        overlay.style.width = width + 'px';
+        overlay.style.height = height + 'px';
+        overlay.style.display = 'block';
+        
+        // Hide the overlay after 3 seconds
+        setTimeout(() => {
+            overlay.style.display = 'none';
+        }, 3000);
+    }
+    
+    // Update audio feed visualization
+    function updateAudioFeed(data) {
+        const canvas = document.getElementById('audio-visualizer');
+        const ctx = canvas.getContext('2d');
+        
+        // Clear previous visualization
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // If no audio data, show placeholder
+        if (!data.amplitude_data || data.amplitude_data.length === 0) {
+            ctx.fillStyle = '#e9ecef';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#6c757d';
+            ctx.font = '12px Arial';
+            ctx.fillText('No audio data available', 10, canvas.height / 2);
+            return;
+        }
+        
+        // Draw the waveform
+        const amplitudes = data.amplitude_data;
+        const barWidth = canvas.width / amplitudes.length;
+        const centerY = canvas.height / 2;
+        
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
+        
+        for (let i = 0; i < amplitudes.length; i++) {
+            const x = i * barWidth;
+            const y = centerY - (amplitudes[i] * centerY);
+            ctx.lineTo(x, y);
+        }
+        
+        ctx.lineTo(canvas.width, centerY);
+        ctx.strokeStyle = '#0dcaf0';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+    
+    // Highlight audio visualization during threat detection
+    function highlightAudioThreat() {
+        const canvas = document.getElementById('audio-visualizer');
+        canvas.style.borderColor = '#dc3545';
+        
+        // Reset after 3 seconds
+        setTimeout(() => {
+            canvas.style.borderColor = '';
+        }, 3000);
+    }
+    
+    // Update text monitoring feed
+    function updateTextFeed(data) {
+        const textFeed = document.getElementById('text-feed');
+        const entry = document.createElement('div');
+        entry.className = 'mb-1';
+        
+        if (data.text) {
+            entry.textContent = `> ${data.text}`;
+            textFeed.appendChild(entry);
+            
+            // Scroll to bottom
+            textFeed.scrollTop = textFeed.scrollHeight;
+            
+            // Limit entries
+            while (textFeed.children.length > 20) {
+                textFeed.removeChild(textFeed.firstChild);
+            }
+        }
+    }
+    
+    // Highlight text in the feed for threat detection
+    function highlightTextThreat(threat) {
+        const textFeed = document.getElementById('text-feed');
+        const entry = document.createElement('div');
+        entry.className = 'mb-1 text-danger fw-bold';
+        entry.innerHTML = `> THREAT DETECTED: ${threat.description}`;
+        textFeed.appendChild(entry);
+        
+        // Scroll to bottom
+        textFeed.scrollTop = textFeed.scrollHeight;
+    }
+    
+    function showNotification(threat) {
+        const notification = document.createElement('div');
+        notification.className = `notification alert alert-${getThreatClass(threat.level)} alert-dismissible fade show`;
+        notification.innerHTML = `
+            <strong>${threat.level} Threat Detected!</strong>
+            <p>${threat.description}</p>
+            <div class="d-flex mt-1 align-items-center">
+                <span class="badge source-badge-${threat.source_type} me-2">${threat.source_type}</span>
+                <small>Confidence: ${Math.round(threat.confidence * 100)}%</small>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Remove after 5 seconds
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
+    }
+    
+    function addThreatToList(threat) {
+        const threatsList = document.getElementById('recent-threats');
+        const threatItem = document.createElement('div');
+        
+        threatItem.className = `list-group-item d-flex gap-3 py-3 threat-card threat-${threat.level}`;
+        threatItem.innerHTML = `
+            <div class="d-flex gap-2 w-100 justify-content-between">
+                <div>
+                    <h6 class="mb-0">${getThreatTitle(threat)}</h6>
+                    <p class="mb-0 opacity-75">${threat.description}</p>
+                    <div class="d-flex mt-1 align-items-center">
+                        <span class="badge threat-badge-${threat.level} me-2">${threat.level}</span>
+                        <span class="badge source-badge-${threat.source_type} me-2">${threat.source_type}</span>
+                        <small class="opacity-50">Confidence: ${Math.round(threat.confidence * 100)}%</small>
+                    </div>
+                </div>
+                <small class="opacity-50 text-nowrap">Just now</small>
+            </div>
+        `;
+        
+        // Add at the beginning
+        threatsList.prepend(threatItem);
+        
+        // Limit to 10 items
+        if (threatsList.children.length > 10) {
+            threatsList.removeChild(threatsList.lastChild);
+        }
+    }
+    
+    function getThreatTitle(threat) {
+        switch(threat.level) {
+            case 'CRITICAL': return 'Critical Security Threat';
+            case 'HIGH': return 'High Priority Threat';
+            case 'MEDIUM': return 'Potential Security Issue';
+            case 'LOW': return 'Minor Security Alert';
+            default: return 'Security Event';
+        }
+    }
+    
+    function getThreatClass(level) {
+        switch(level) {
+            case 'CRITICAL': return 'danger';
+            case 'HIGH': return 'warning';
+            case 'MEDIUM': return 'info';
+            case 'LOW': return 'success';
+            default: return 'secondary';
+        }
+    }
+    
+    // Initialize timeline chart
+    function initializeTimeline() {
+        const ctx = document.getElementById('threat-timeline').getContext('2d');
+        const timelineChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(20).fill('').map((_, i) => ''),
+                datasets: [{
+                    label: 'Threat Level',
+                    data: Array(20).fill(0),
+                    borderColor: '#0d6efd',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+        
+        return timelineChart;
+    }
+    
+    // Update timeline with new data
+    function updateTimeline() {
+        if (!window.timelineChart) {
+            window.timelineChart = initializeTimeline();
+        }
+        
+        // Add new data point
+        const threatLevel = Math.floor(Math.random() * 100);
+        window.timelineChart.data.datasets[0].data.push(threatLevel);
+        window.timelineChart.data.datasets[0].data.shift();
+        
+        window.timelineChart.update();
+    }
+    
+    // Filter threats by type
+    document.querySelectorAll('.btn-group button[data-filter]').forEach(button => {
+        button.addEventListener('click', function() {
+            // Update active state
+            document.querySelectorAll('.btn-group button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            this.classList.add('active');
+            
+            // Apply filter
+            const filter = this.getAttribute('data-filter');
+            document.querySelectorAll('#recent-threats .list-group-item').forEach(item => {
+                if (filter === 'all') {
+                    item.style.display = 'flex';
+                } else {
+                    const sourceType = item.querySelector('.source-badge-' + filter);
+                    item.style.display = sourceType ? 'flex' : 'none';
+                }
+            });
+        });
+    });
+    
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        window.timelineChart = initializeTimeline();
+        
+        // Fetch initial data
+        fetch('/dashboard/data/')
+            .then(response => response.json())
+            .then(data => {
+                // Update threat list
+                if (data.threats && data.threats.length > 0) {
+                    document.getElementById('recent-threats').innerHTML = '';
+                    data.threats.forEach(threat => {
+                        addThreatToList(threat);
+                    });
+                }
+                
+                // Update session status
+                if (data.session_status) {
+                    updateSessionStatus(data.session_status);
+                }
+            })
+            .catch(error => console.error('Error fetching dashboard data:', error));
+        
+        // Button listeners
+        document.getElementById('start-monitoring').addEventListener('click', function() {
+            console.log('Start monitoring clicked');
+            // Make API call to start monitoring
+            fetch('/start-monitoring/', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateSessionStatus({
+                            visual: 'active',
+                            audio: 'active',
+                            text: 'active'
+                        });
+                        
+                        // Update feed statuses
+                        document.getElementById('visual-feed-status').textContent = 'Active';
+                        document.getElementById('visual-feed-status').className = 'feed-status active';
+                        document.getElementById('audio-feed-status').textContent = 'Active';
+                        document.getElementById('audio-feed-status').className = 'feed-status active';
+                        document.getElementById('text-feed-status').textContent = 'Active';
+                        document.getElementById('text-feed-status').className = 'feed-status active';
+                    }
+                })
+                .catch(error => console.error('Error starting monitoring:', error));
+        });
+        
+        document.getElementById('stop-monitoring').addEventListener('click', function() {
+            console.log('Stop monitoring clicked');
+            // Make API call to stop monitoring
+            fetch('/stop-monitoring/', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateSessionStatus({
+                            visual: 'inactive',
+                            audio: 'inactive',
+                            text: 'inactive'
+                        });
+                        
+                        // Update feed statuses
+                        document.getElementById('visual-feed-status').textContent = 'Inactive';
+                        document.getElementById('visual-feed-status').className = 'feed-status inactive';
+                        document.getElementById('audio-feed-status').textContent = 'Inactive';
+                        document.getElementById('audio-feed-status').className = 'feed-status inactive';
+                        document.getElementById('text-feed-status').textContent = 'Inactive';
+                        document.getElementById('text-feed-status').className = 'feed-status inactive';
+                    }
+                })
+                .catch(error => console.error('Error stopping monitoring:', error));
+        });
+    });
+    
+    function updateSessionStatus(status) {
+        // Update visual status
+        document.getElementById('visual-status').className = `badge ${status.visual === 'active' ? 'bg-success' : 'bg-secondary'}`;
+        document.getElementById('visual-status').textContent = status.visual === 'active' ? 'Active' : 'Inactive';
+        
+        // Update audio status
+        document.getElementById('audio-status').className = `badge ${status.audio === 'active' ? 'bg-success' : 'bg-secondary'}`;
+        document.getElementById('audio-status').textContent = status.audio === 'active' ? 'Active' : 'Inactive';
+        
+        // Update text status
+        document.getElementById('text-status').className = `badge ${status.text === 'active' ? 'bg-success' : 'bg-secondary'}`;
+        document.getElementById('text-status').textContent = status.text === 'active' ? 'Active' : 'Inactive';
+    }
+</script>
+{% endblock %} 
