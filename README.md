@@ -29,7 +29,7 @@ A multimodal, AI-powered application that monitors and detects cybersecurity thr
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/THECH13F/HACKHAZARD25.git
 cd rt-cta
 ```
 
